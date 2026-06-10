@@ -2,6 +2,7 @@ import pyautogui
 import numpy as np
 import keyboard
 import time
+import random
 from math import inf
 
 # Globals
@@ -16,7 +17,8 @@ COLOR_PALETTE = np.asarray([
     [0, 128, 0],     # Index 2: Green (2)
     [255, 0, 0],     # Index 3: Red (3)
     [0, 0, 128],     # Index 4: Dark Blue (4)
-    [255, 255, 255]  # Index 5: Pure White Bevel (Hidden Indicator)
+    [123, 0, 0],     # Index 5: Dark Red (5)
+    [255, 255, 255]  # Index 6: Pure White Bevel (Hidden Indicator)
 ])
 
 class Cell:
@@ -116,7 +118,7 @@ def scan_and_update():
         for col in range(16):
             cell = grid[row][col]
             
-            if cell.state == 'flagged':
+            if cell.state in ('flagged', 'flagged_placed', 'pending_click'):
                 continue
                 
             #get center pixels for cell
@@ -135,6 +137,8 @@ def scan_and_update():
                 cell.state = 'revealed'; cell.value = 3
             elif closest_match == 4:
                 cell.state = 'revealed'; cell.value = 4
+            elif closest_match == 5:
+                cell.state = 'revealed'; cell.value = 5
             else:
                 # If closest match is 0 (gray), verify if it's hidden or an empty opened zero
                 # We perform a micro sweep on the left edge looking for the white 3D highlight
@@ -145,7 +149,7 @@ def scan_and_update():
                 for scan_x in range(left_edge_start, left_edge_end):
                     edge_rgb = screen.getpixel((scan_x, cell.pixel_y))[:3]
                     edge_errors = np.sum(np.square(COLOR_PALETTE - edge_rgb), axis=1)
-                    if np.argmin(edge_errors) == 5: # Detected white highlight element
+                    if np.argmin(edge_errors) == 6: # Detected white highlight element
                         is_hidden = True
                         break
                         
@@ -156,13 +160,94 @@ def scan_and_update():
                     cell.state = 'revealed'
                     cell.value = 0
 
+def random_click():
+    row, column = random.randint(0, 15), random.randint(0, 15)
+    cell = grid[row][column]
+    pyautogui.click(cell.pixel_x, cell.pixel_y, button='left')
+    time.sleep(0.3)
+
+def rule_one():
+
+    if grid is None: return False
+    
+    action_found = False
+    
+    for row in range(16):
+        for col in range(16):
+            cell = grid[row][col]
+            
+            if cell.state != 'revealed' or cell.value == 0:
+                continue
+                
+            # make 2 lists for every cell
+            hidden_neighbors = [n for n in cell.neighbors if n.state == 'hidden']
+            flagged_neighbors = [n for n in cell.neighbors if n.state in ('flagged', 'flagged_placed')] 
+            
+            num_hidden = len(hidden_neighbors)
+            num_flagged = len(flagged_neighbors)
+            
+            # RULE 1: Flagging Logic
+            # If the number of remaining hidden tiles + already flagged tiles 
+
+            if cell.value == (num_hidden + num_flagged) and num_hidden > 0:
+                for target in hidden_neighbors:
+                    target.state = 'flagged' 
+                action_found = True
+                
+            # RULE 2: Clear Safe Tiles Logic
+            # Flagged tiles == num on cell mean hidden cells safe
+            elif cell.value == num_flagged and num_hidden > 0:
+                for target in hidden_neighbors:
+                    target.state = 'pending_click' 
+                action_found = True
+
+    return action_found
+
+def rule_book(): 
+    #apply rules one by one
+
+    return rule_one()
+
+
+def execution():
+    
+    for row in range(16):
+        for col in range(16):
+            cell = grid[row][col]
+            
+            # Action A: Cleanly click safe areas
+            if cell.state == 'pending_click':
+                pyautogui.click(cell.pixel_x, cell.pixel_y, button='left')
+                cell.state = 'revealed' # Optimistically change state to minimize screen lag
+
+            # Action B: Place flag markers on found bombs
+            elif cell.state == 'flagged_placed':
+                continue
+
+            elif cell.state == 'flagged':
+                pyautogui.click(cell.pixel_x, cell.pixel_y, button='right')
+                cell.state = 'flagged_placed'
+                
 def main_loop():
     
-    pass
+    scan_and_update()
+
+    available_moves = rule_book()
+    
+    if not available_moves:
+        print("No 100 percent safe moves")
+        return False
+
+    execution()
+    return True 
+    
+
+
 print(" [Space] - Calibrate Board Coordinates Manually")
-print(" [S]     - Scan Screen and Update Board State")
+print(" [S]     - Scan Screen and Reset Board State")
 print(" [P]     - Print Current Bot Brain Grid View")
-print(" [Q]     - Quit Script")
+print(" [H]     - Begin botting")
+print(" [Q]     - Quit Script") 
 
 while RUNNING:
     if keyboard.is_pressed("Space"):
@@ -170,10 +255,29 @@ while RUNNING:
         time.sleep(0.4)
         
     if keyboard.is_pressed("s"):
+        for row in range(16):
+            for col in range(16):
+                cell = grid[row][col]
+                cell.state = "hidden"
         scan_and_update()
         print_board()
         time.sleep(0.4)
-  
+    
+    if keyboard.is_pressed("h"):
+        main_loop_activated = True 
+        random_click() 
+        while main_loop_activated:
+            has_moves = main_loop()
+
+            if not has_moves:
+                print("Stopping Solving")
+                main_loop_activated = False
+
+            if keyboard.is_pressed("h"):
+                print("Stopping Solving") 
+                main_loop_activated = False
+                time.sleep(0.5)
+    
     if keyboard.is_pressed("b"):
         x, y = pyautogui.position()
         rgb = pyautogui.pixel(x, y)

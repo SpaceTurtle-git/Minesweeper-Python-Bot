@@ -94,22 +94,25 @@ def print_board():
     print("    " + "---" * GRID_COLS + "\n")
 
 def calibrate_manually():
-    print("\n=== STARTING MANUAL CORNER CALIBRATION ===")
-    
-    print(f"1. Hover mouse over DEAD CENTER of TOP-LEFT cell (0,0) and press 'ENTER'...")
+
+    print(f"Hover mouse over DEAD CENTER of TOP-LEFT cell (0,0) and press 'ENTER'...")
     keyboard.wait('enter')
     left_x, top_y = pyautogui.position()
+
     print(f"Captured Top-Left Origin: ({left_x}, {top_y})")
     time.sleep(0.3)
     
-    print(f"2. Hover mouse over DEAD CENTER of BOTTOM-RIGHT cell ({GRID_ROWS-1},{GRID_COLS-1}) and press 'ENTER'...")
+    print(f"Hover mouse over DEAD CENTER of BOTTOM-RIGHT cell ({GRID_ROWS-1},{GRID_COLS-1}) and press 'ENTER'...")
     keyboard.wait('enter')
     right_x, bottom_y = pyautogui.position()
+
     print(f"Captured Bottom-Right Bound: ({right_x}, {bottom_y})")
     time.sleep(0.3)
     
     build_grid(left_x, top_y, right_x, bottom_y)
-    print("[SUCCESS] Grid mapped cleanly into memory. Ready to scan.\n")
+    print("Grid mapped cleanly into memory.\n")
+    print("---------")
+    print("SCAN THE BOARD TO BEGIN")
 
 def scan_and_update():
     if grid is None:

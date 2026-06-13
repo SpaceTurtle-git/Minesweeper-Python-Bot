@@ -82,6 +82,14 @@ pip install -r requirements.txt
 
 ---
 
+## How to run bot
+
+```bash
+ py bot.py
+```
+
+---
+
 ## Controls & Execution
 
 Launch the script in your terminal. You **must** calibrate the screen coordinates before launching the automation loops.

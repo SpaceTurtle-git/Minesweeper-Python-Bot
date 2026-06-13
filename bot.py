@@ -12,6 +12,7 @@ GRID_COLS = 16   # Horizontal size (X-axis)
 # Globals
 grid = None  
 RUNNING = True 
+AUTO = False
 pyautogui.PAUSE = 0.01
 
 COLOR_PALETTE = np.asarray([
@@ -152,9 +153,9 @@ def random_click():
     column = random.randint(0, GRID_COLS - 1)
     cell = grid[row][column]
     pyautogui.click(cell.pixel_x, cell.pixel_y, button='left')
-    time.sleep(0.35) # Essential delay allowing the UI engine to render cascades
+    time.sleep(0.2) #I TRIED LOWER NUMBER THE SCAN CAN IMMEDIATELY PICK UP THE BOARD
 
-def emergency_guess():
+def emergency_guess():  #emergency guess the click the least likely bomb spot
     if grid is None: return
     best_cell = None
     min_danger = inf
@@ -190,9 +191,9 @@ def emergency_guess():
             best_cell = cell
 
     target = best_cell if best_cell else random.choice(hidden_pool)
-    print(f"Strategic Local Probability Guess executed at Row:{target.row} Col:{target.col} (Danger: {round(min_danger, 2)})")
+    print(f"Guess executed at Row:{target.row} Col:{target.col} (Danger: {round(min_danger, 2)*100}%)")
     pyautogui.click(target.pixel_x, target.pixel_y, button='left')
-    time.sleep(0.35)
+    time.sleep(0.08)
 
 def rule_one():  #bomb flagging ang 100% safe space clicker rule
     if grid is None: return False
@@ -223,7 +224,7 @@ def rule_one():  #bomb flagging ang 100% safe space clicker rule
 
     return action_found
 
-def rule_two():
+def rule_two():   #subset Redution Logic
     if grid is None: return False
     action_found = False
     
@@ -273,19 +274,18 @@ def rule_two():
                                 
     return action_found
 
-def rule_three():
+def rule_three(): #classic 121 minesweeper pattern
     """Identifies and solves classic 1-2-1 linear wall configurations."""
     if grid is None: return False
     action_found = False
 
-    # Helper function to safely calculate effective value
+    # Helper function to safely calculate unflagged neighbor cells
     def get_eff(cell):
         if cell.state != 'revealed' or cell.value == 0:
             return -1
         flagged = sum(1 for n in cell.neighbors if n.state in ('flagged', 'flagged_placed'))
         return cell.value - flagged
 
-    # Loop through grid leaving margins for a 3-tile wide pattern match
     for row in range(GRID_ROWS):
         for col in range(GRID_COLS):
             
@@ -304,7 +304,6 @@ def rule_three():
                             tB = grid[r_check][col+1]
                             tC = grid[r_check][col+2]
 
-                            # Check if all 3 targets are currently hidden options
                             if tA.state == 'hidden' and tB.state == 'hidden' and tC.state == 'hidden':
                                 tA.state = 'flagged'
                                 tB.state = 'pending_click'  # The center is safe!
@@ -334,7 +333,7 @@ def rule_three():
 
     return action_found
 
-def rule_four():
+def rule_four():  #shared Intersection Rule 
     if grid is None: return False
     action_found = False
     
@@ -391,7 +390,7 @@ def rule_book():
         return True
     return rule_four()
 
-def execution():
+def execution(): # clicking part
     clicked_any = False
     for row in range(GRID_ROWS):
         for col in range(GRID_COLS):
@@ -409,7 +408,7 @@ def execution():
     if clicked_any:
         time.sleep(0.08) # Let OS frame buffers clear
 
-def main_loop():
+def main_loop():  #main shi
     scan_and_update()
     available_moves = rule_book()
     
@@ -420,14 +419,15 @@ def main_loop():
     execution()
     return True 
 
-print(" [Space] - Calibrate Board Coordinates Manually")
+print(" [C]     - Calibrate Board Coordinates ")
 print(" [S]     - Scan Screen and Reset Board State")
 print(" [P]     - Print Current Bot Brain Grid View")
-print(" [H]     - Begin botting")
 print(" [Q]     - Quit Script") 
+print(" [A]     - Turn OFF Automated Emergency Guessing") 
+print(" [SPACE] - Begin botting")
 
 while RUNNING:
-    if keyboard.is_pressed("Space"):
+    if keyboard.is_pressed("c"):
         calibrate_manually()
         time.sleep(0.4)
         
@@ -440,26 +440,42 @@ while RUNNING:
             scan_and_update()
             print_board()
         else:
-            print("[ERROR] Map the board first before scanning!")
+            print("Map the board first before scanning")
         time.sleep(0.4)
     
-    if keyboard.is_pressed("h"):
+    if keyboard.is_pressed("Space"):
         main_loop_activated = True 
         random_click() 
         while main_loop_activated:
             has_moves = main_loop()
 
-            # if not has_moves:
-            #     print("No safe moves structural pattern matches found. Firing tactical evaluation guesser...")
-            #     emergency_guess()
-            #     scan_and_update()
-            #     if not rule_book():
-            #         pass
+            if not has_moves and AUTO == True:
+                print("Emergency guessing")
+                emergency_guess()
+                scan_and_update()
+                if not rule_book():
+                    print("No useful info revealed from Emergency guessing")
 
-            if keyboard.is_pressed("h"): 
+            elif not has_moves and AUTO == False:
+                print("Press Y to emergency guess or N to skip")
+
+                event = keyboard.read_event()
+                if event.event_type == keyboard.KEY_DOWN:
+                    key = event.name.lower()
+
+                    if key == 'y':
+                        emergency_guess()
+                        scan_and_update()
+                        if not rule_book():
+                            print("No useful info revealed from Emergency guessing")
+                    if key == 'n':
+                        print("Skipping")
+                        continue
+
+            if keyboard.is_pressed("Space"): 
                 print("Stopping Solving") 
                 main_loop_activated = False
-                time.sleep(0.5)
+                time.sleep(0.2)
     
     if keyboard.is_pressed("b"):
         x, y = pyautogui.position()
@@ -470,7 +486,13 @@ while RUNNING:
     if keyboard.is_pressed("q"):
         print("Stopping")
         RUNNING = False
-    
+        time.sleep(0.3)
+
+    if keyboard.is_pressed("A"):
+        print("AUTOMATED EMERGENCY GUESSING SWITCHED")
+        AUTO = True
+        time.sleep(0.3)
+
     if keyboard.is_pressed("p"):
         print_board()
         time.sleep(0.3)

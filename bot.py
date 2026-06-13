@@ -15,6 +15,7 @@ RUNNING = True
 AUTO = False
 pyautogui.PAUSE = 0.01
 
+# IF YOUR MINESWEEPER USES  DIFFERENT COLOR PALLETE COMNFIGURE IT HERE ACCORDINGLY
 COLOR_PALETTE = np.asarray([
     [189, 189, 189], # Index 0: Standard Flat Gray (0)
     [0, 0, 255],     # Index 1: Blue (1) 

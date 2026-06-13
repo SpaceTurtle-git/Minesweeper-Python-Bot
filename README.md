@@ -4,6 +4,9 @@
 
 An optimized, screen-scraping Minesweeper automation bot written in Python. It uses computer vision (`pyautogui`) to map grid states directly from your screen, converts them into logical constraints using set theory and spatial pattern recognition, and executes physical mouse clicks to solve boards at lightning speeds.
 
+> [!TIP]
+> Try this bot on https://minesweeperonline.com/#intermediate-150
+
 ---
 #  Bot In Action
 

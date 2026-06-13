@@ -5,11 +5,14 @@ import time
 import random
 from math import inf
 
+#CONFIGURABLE GRID DIMENSIONS
+GRID_ROWS = 16  # Vertical size (Y-axis)
+GRID_COLS = 16   # Horizontal size (X-axis)
+
 # Globals
-grid_size_x = 16
-grid_size_y = 16
 grid = None  
-RUNNING = True
+RUNNING = True 
+pyautogui.PAUSE = 0.01
 
 COLOR_PALETTE = np.asarray([
     [189, 189, 189], # Index 0: Standard Flat Gray (0)
@@ -18,10 +21,11 @@ COLOR_PALETTE = np.asarray([
     [255, 0, 0],     # Index 3: Red (3)
     [0, 0, 128],     # Index 4: Dark Blue (4)
     [123, 0, 0],     # Index 5: Dark Red (5)
-    [255, 255, 255]  # Index 6: Pure White Bevel (Hidden Indicator)
+    [0, 123, 123],   # Index 6: Teal (6)
+    [255, 255, 255]  # Index 7: Pure White Bevel (Hidden Indicator)
 ])
 
-class Cell:
+class Cell:               
     def __init__(self, col, row):
         self.col = col          
         self.row = row          
@@ -34,14 +38,14 @@ class Cell:
 def build_grid(left_x, top_y, right_x, bottom_y):
     global grid 
     
-    # Calculate cell dimensions accurately as floats from corner to corner
-    cell_width = (right_x - left_x) / 15
-    cell_height = (bottom_y - top_y) / 15
+    # Dynamically scale step intervals based on custom grid counts
+    cell_width = (right_x - left_x) / (GRID_COLS - 1)
+    cell_height = (bottom_y - top_y) / (GRID_ROWS - 1)
     
-    grid = [[Cell(c, r) for c in range(16)] for r in range(16)]
+    grid = [[Cell(c, r) for c in range(GRID_COLS)] for r in range(GRID_ROWS)]
     
-    for row in range(16):
-        for col in range(16):
+    for row in range(GRID_ROWS):
+        for col in range(GRID_COLS):
             current_cell = grid[row][col]
 
             # Calculate precise center location of each individual tile
@@ -55,12 +59,13 @@ def build_grid(left_x, top_y, right_x, bottom_y):
             for dr in [-1, 0, 1]:
                 for dc in [-1, 0, 1]:
                     if dr == 0 and dc == 0: 
-                        continue # skip urself
+                        continue # skip yourself
                     
                     neighbor_row = row + dr
                     neighbor_col = col + dc
                     
-                    if 0 <= neighbor_row < 16 and 0 <= neighbor_col < 16:
+                    # Enforce boundaries relative to variable grid sizes
+                    if 0 <= neighbor_row < GRID_ROWS and 0 <= neighbor_col < GRID_COLS:
                         current_cell.neighbors.append(grid[neighbor_row][neighbor_col])
 
 def print_board():
@@ -69,34 +74,34 @@ def print_board():
         return
 
     print("\n--- CURRENT BOT MEMORY BOARD ---")
-    print("    " + " ".join(f"{c:02d}" for c in range(16)))  
-    print("    " + "-----------------------------------------------")
+    print("    " + " ".join(f"{c:02d}" for c in range(GRID_COLS)))  
+    print("    " + "---" * GRID_COLS)
     
-    for r in range(16):
+    for r in range(GRID_ROWS):
         row_strings = []
-        for c in range(16):
+        for c in range(GRID_COLS):
             cell = grid[r][c]
             if cell.state == 'hidden':
                 symbol = "■"  
-            elif cell.state == 'flagged':
+            elif cell.state in ('flagged', 'flagged_placed'):
                 symbol = "F" 
             else:
                 symbol = str(cell.value) if cell.value > 0 else "." 
             row_strings.append(f" {symbol} ")
 
         print(f"{r:02d} |" + "".join(row_strings))  
-    print("    " + "------------------------------------------------\n")
+    print("    " + "---" * GRID_COLS + "\n")
 
 def calibrate_manually():
     print("\n=== STARTING MANUAL CORNER CALIBRATION ===")
     
-    print("1. Hover your mouse over the DEAD CENTER of the TOP-LEFT cell (0,0) and press 'ENTER'...")
+    print(f"1. Hover mouse over DEAD CENTER of TOP-LEFT cell (0,0) and press 'ENTER'...")
     keyboard.wait('enter')
     left_x, top_y = pyautogui.position()
     print(f"Captured Top-Left Origin: ({left_x}, {top_y})")
     time.sleep(0.3)
     
-    print("2. Hover your mouse over the DEAD CENTER of the BOTTOM-RIGHT cell (15,15) and press 'ENTER'...")
+    print(f"2. Hover mouse over DEAD CENTER of BOTTOM-RIGHT cell ({GRID_ROWS-1},{GRID_COLS-1}) and press 'ENTER'...")
     keyboard.wait('enter')
     right_x, bottom_y = pyautogui.position()
     print(f"Captured Bottom-Right Bound: ({right_x}, {bottom_y})")
@@ -106,54 +111,36 @@ def calibrate_manually():
     print("[SUCCESS] Grid mapped cleanly into memory. Ready to scan.\n")
 
 def scan_and_update():
-    
     if grid is None:
         print("[ERROR] Cannot scan screen! Calibrate the grid first by pressing Space.")
         return
     
-    print("Scanning screen and parsing colors via MSE...")
-    screen = pyautogui.screenshot()
+    screen_pil = pyautogui.screenshot()
+    screen = np.array(screen_pil) 
     
-    for row in range(16):
-        for col in range(16):
+    for row in range(GRID_ROWS):
+        for col in range(GRID_COLS):
             cell = grid[row][col]
             
             if cell.state in ('flagged', 'flagged_placed', 'pending_click'):
                 continue
                 
-            #get center pixels for cell
-            center_rgb = screen.getpixel((cell.pixel_x, cell.pixel_y))[:3]
-            #calculate minimum error for which color
+            center_rgb = screen[cell.pixel_y, cell.pixel_x][:3]
+            
             errors = np.sum(np.square(COLOR_PALETTE - center_rgb), axis=1)  
-            #turn error into absolute value
             closest_match = np.argmin(errors)
             
-            # Map vision results straight to state variables
-            if closest_match == 1:
-                cell.state = 'revealed'; cell.value = 1
-            elif closest_match == 2:
-                cell.state = 'revealed'; cell.value = 2
-            elif closest_match == 3:
-                cell.state = 'revealed'; cell.value = 3
-            elif closest_match == 4:
-                cell.state = 'revealed'; cell.value = 4
-            elif closest_match == 5:
-                cell.state = 'revealed'; cell.value = 5
+            if closest_match in (1, 2, 3, 4, 5, 6):
+                cell.state = 'revealed'
+                cell.value = closest_match
             else:
-                # If closest match is 0 (gray), verify if it's hidden or an empty opened zero
-                # We perform a micro sweep on the left edge looking for the white 3D highlight
-                is_hidden = False
                 left_edge_start = int(cell.pixel_x - (cell.w_radius * 0.45))
                 left_edge_end = int(cell.pixel_x - (cell.w_radius * 0.15))
                 
-                for scan_x in range(left_edge_start, left_edge_end):
-                    edge_rgb = screen.getpixel((scan_x, cell.pixel_y))[:3]
-                    edge_errors = np.sum(np.square(COLOR_PALETTE - edge_rgb), axis=1)
-                    if np.argmin(edge_errors) == 6: # Detected white highlight element
-                        is_hidden = True
-                        break
-                        
-                if is_hidden:
+                edge_pixels = screen[cell.pixel_y, left_edge_start:left_edge_end, :3]
+                white_errors = np.sum(np.square(edge_pixels - COLOR_PALETTE[7]), axis=1)
+                
+                if np.any(white_errors < 500): 
                     cell.state = 'hidden'
                     cell.value = 0
                 else:
@@ -161,41 +148,74 @@ def scan_and_update():
                     cell.value = 0
 
 def random_click():
-    row, column = random.randint(0, 15), random.randint(0, 15)
+    row = random.randint(0, GRID_ROWS - 1)
+    column = random.randint(0, GRID_COLS - 1)
     cell = grid[row][column]
     pyautogui.click(cell.pixel_x, cell.pixel_y, button='left')
-    time.sleep(0.3)
+    time.sleep(0.35) # Essential delay allowing the UI engine to render cascades
 
-def rule_one():
-
-    if grid is None: return False
+def emergency_guess():
+    if grid is None: return
+    best_cell = None
+    min_danger = inf
     
+    hidden_pool = []
+    for row in range(GRID_ROWS):
+        for col in range(GRID_COLS):
+            if grid[row][col].state == 'hidden':
+                hidden_pool.append(grid[row][col])
+                
+    if not hidden_pool: return
+
+    for cell in hidden_pool:
+        danger_weight = 0.0
+        revealed_neighbors = 0
+        
+        for n in cell.neighbors:
+            if n.state == 'revealed' and n.value > 0:
+                revealed_neighbors += 1
+                n_hidden = sum(1 for active in n.neighbors if active.state == 'hidden')
+                n_flagged = sum(1 for active in n.neighbors if active.state in ('flagged', 'flagged_placed'))
+                rem_mines = n.value - n_flagged
+                if n_hidden > 0:
+                    danger_weight += (rem_mines / n_hidden)
+                    
+        if revealed_neighbors > 0:
+            total_score = danger_weight / revealed_neighbors
+        else:
+            total_score = 0.15
+            
+        if total_score < min_danger:
+            min_danger = total_score
+            best_cell = cell
+
+    target = best_cell if best_cell else random.choice(hidden_pool)
+    print(f"Strategic Local Probability Guess executed at Row:{target.row} Col:{target.col} (Danger: {round(min_danger, 2)})")
+    pyautogui.click(target.pixel_x, target.pixel_y, button='left')
+    time.sleep(0.35)
+
+def rule_one():  #bomb flagging ang 100% safe space clicker rule
+    if grid is None: return False
     action_found = False
     
-    for row in range(16):
-        for col in range(16):
+    for row in range(GRID_ROWS):
+        for col in range(GRID_COLS):
             cell = grid[row][col]
             
             if cell.state != 'revealed' or cell.value == 0:
                 continue
                 
-            # make 2 lists for every cell
             hidden_neighbors = [n for n in cell.neighbors if n.state == 'hidden']
             flagged_neighbors = [n for n in cell.neighbors if n.state in ('flagged', 'flagged_placed')] 
             
             num_hidden = len(hidden_neighbors)
             num_flagged = len(flagged_neighbors)
             
-            # RULE 1: Flagging Logic
-            # If the number of remaining hidden tiles + already flagged tiles 
-
             if cell.value == (num_hidden + num_flagged) and num_hidden > 0:
                 for target in hidden_neighbors:
                     target.state = 'flagged' 
                 action_found = True
                 
-            # RULE 2: Clear Safe Tiles Logic
-            # Flagged tiles == num on cell mean hidden cells safe
             elif cell.value == num_flagged and num_hidden > 0:
                 for target in hidden_neighbors:
                     target.state = 'pending_click' 
@@ -203,35 +223,194 @@ def rule_one():
 
     return action_found
 
+def rule_two():
+    if grid is None: return False
+    action_found = False
+    
+    for row in range(GRID_ROWS):
+        for col in range(GRID_COLS):
+            cellA = grid[row][col]
+          
+            if cellA.state != 'revealed' or cellA.value == 0: 
+                continue
+
+            hiddenA = set(n for n in cellA.neighbors if n.state == 'hidden')
+            flaggedA = sum(1 for n in cellA.neighbors if n.state in ('flagged', 'flagged_placed'))
+            effectiveA = cellA.value - flaggedA
+            
+            if not hiddenA: 
+                continue
+
+            for cellB in cellA.neighbors:
+                if cellB.state != 'revealed' or cellB.value == 0 or cellB == cellA: 
+                    continue
+
+                hiddenB = set(n for n in cellB.neighbors if n.state == 'hidden')
+                flaggedB = sum(1 for n in cellB.neighbors if n.state in ('flagged', 'flagged_placed'))
+                effectiveB = cellB.value - flaggedB
+                
+                if not hiddenB: 
+                    continue
+
+                # Check if A's hidden tiles are completely wrapped inside B's hidden tiles
+                if hiddenA.issubset(hiddenB) and hiddenA != hiddenB:
+                    extra_tiles = hiddenB - hiddenA          #subtracts the shared sets to isolate the hidden tiles that only touch Cell B.
+                    mine_diff = effectiveB - effectiveA      #determines how many mines are left unaccounted for outside the shared zone.
+
+                    # Case 1: Both sets need the same number of mines. Extra tiles are SAFE.
+                    if mine_diff == 0:
+                        for target in extra_tiles:
+                            if target.state == 'hidden':
+                                target.state = 'pending_click'
+                                action_found = True
+                                
+                    # Case 2: Excess mines equal the exact number of extra tiles. Extra tiles are MINES.
+                    elif mine_diff == len(extra_tiles):
+                        for target in extra_tiles:
+                            if target.state == 'hidden':
+                                target.state = 'flagged'
+                                action_found = True
+                                
+    return action_found
+
+def rule_three():
+    """Identifies and solves classic 1-2-1 linear wall configurations."""
+    if grid is None: return False
+    action_found = False
+
+    # Helper function to safely calculate effective value
+    def get_eff(cell):
+        if cell.state != 'revealed' or cell.value == 0:
+            return -1
+        flagged = sum(1 for n in cell.neighbors if n.state in ('flagged', 'flagged_placed'))
+        return cell.value - flagged
+
+    # Loop through grid leaving margins for a 3-tile wide pattern match
+    for row in range(GRID_ROWS):
+        for col in range(GRID_COLS):
+            
+            # --- CASE A: Horizontal 1-2-1 Pattern [ 1 ][ 2 ][ 1 ] ---
+            if col < GRID_COLS - 2:
+                cA = grid[row][col]
+                cB = grid[row][col+1]
+                cC = grid[row][col+2]
+
+                if get_eff(cA) == 1 and get_eff(cB) == 2 and get_eff(cC) == 1:
+                    # Find shared hidden blocks above or below this horizontal line
+                    for dr in [-1, 1]:
+                        r_check = row + dr
+                        if 0 <= r_check < GRID_ROWS:
+                            tA = grid[r_check][col]
+                            tB = grid[r_check][col+1]
+                            tC = grid[r_check][col+2]
+
+                            # Check if all 3 targets are currently hidden options
+                            if tA.state == 'hidden' and tB.state == 'hidden' and tC.state == 'hidden':
+                                tA.state = 'flagged'
+                                tB.state = 'pending_click'  # The center is safe!
+                                tC.state = 'flagged'
+                                action_found = True
+
+            # --- CASE B: Vertical 1-2-1 Pattern ---
+            if row < GRID_ROWS - 2:
+                cA = grid[row][col]
+                cB = grid[row+1][col]
+                cC = grid[row+2][col]
+
+                if get_eff(cA) == 1 and get_eff(cB) == 2 and get_eff(cC) == 1:
+                    # Find shared hidden blocks to the left or right of this vertical line
+                    for dc in [-1, 1]:
+                        c_check = col + dc
+                        if 0 <= c_check < GRID_COLS:
+                            tA = grid[row][c_check]
+                            tB = grid[row+1][c_check]
+                            tC = grid[row+2][c_check]
+
+                            if tA.state == 'hidden' and tB.state == 'hidden' and tC.state == 'hidden':
+                                tA.state = 'flagged'
+                                tB.state = 'pending_click'  # The center is safe!
+                                tC.state = 'flagged'
+                                action_found = True
+
+    return action_found
+
+def rule_four():
+    if grid is None: return False
+    action_found = False
+    
+    numbered_cells = []
+    for r in range(GRID_ROWS):
+        for c in range(GRID_COLS):
+            cell = grid[r][c]
+            if cell.state == 'revealed' and cell.value > 0:
+                numbered_cells.append(cell)
+
+    for i in range(len(numbered_cells)):
+        cellA = numbered_cells[i]
+        hiddenA = set(n for n in cellA.neighbors if n.state == 'hidden')
+        if not hiddenA: continue
+        flaggedA = sum(1 for n in cellA.neighbors if n.state in ('flagged', 'flagged_placed'))
+        effA = cellA.value - flaggedA
+
+        for j in range(i + 1, len(numbered_cells)):
+            cellB = numbered_cells[j]
+            hiddenB = set(n for n in cellB.neighbors if n.state == 'hidden')
+            if not hiddenB: continue
+            flaggedB = sum(1 for n in cellB.neighbors if n.state in ('flagged', 'flagged_placed'))
+            effB = cellB.value - flaggedB
+
+            intersection = hiddenA.intersection(hiddenB)
+            if not intersection: continue
+
+            onlyA = hiddenA - intersection
+            onlyB = hiddenB - intersection
+
+            max_in_intersection = min(effA, len(intersection))
+            min_in_intersection = max(0, effA - len(onlyA))
+
+            if effB - len(onlyB) == max_in_intersection and len(onlyB) > 0:
+                for target in onlyB:
+                    if target.state == 'hidden':
+                        target.state = 'flagged'
+                        action_found = True
+
+            if effB == min_in_intersection and len(onlyB) > 0:
+                for target in onlyB:
+                    if target.state == 'hidden':
+                        target.state = 'pending_click'
+                        action_found = True
+                        
+    return action_found
+
 def rule_book(): 
-    #apply rules one by one
-
-    return rule_one()
-
+    if rule_one(): 
+        return True
+    if rule_two():
+        return True
+    if rule_three():
+        return True
+    return rule_four()
 
 def execution():
-    
-    for row in range(16):
-        for col in range(16):
+    clicked_any = False
+    for row in range(GRID_ROWS):
+        for col in range(GRID_COLS):
             cell = grid[row][col]
-            
-            # Action A: Cleanly click safe areas
+
             if cell.state == 'pending_click':
                 pyautogui.click(cell.pixel_x, cell.pixel_y, button='left')
-                cell.state = 'revealed' # Optimistically change state to minimize screen lag
-
-            # Action B: Place flag markers on found bombs
-            elif cell.state == 'flagged_placed':
-                continue
+                cell.state = 'revealed' 
+                clicked_any = True
 
             elif cell.state == 'flagged':
                 pyautogui.click(cell.pixel_x, cell.pixel_y, button='right')
                 cell.state = 'flagged_placed'
-                
-def main_loop():
-    
-    scan_and_update()
+                clicked_any = True
+    if clicked_any:
+        time.sleep(0.08) # Let OS frame buffers clear
 
+def main_loop():
+    scan_and_update()
     available_moves = rule_book()
     
     if not available_moves:
@@ -240,8 +419,6 @@ def main_loop():
 
     execution()
     return True 
-    
-
 
 print(" [Space] - Calibrate Board Coordinates Manually")
 print(" [S]     - Scan Screen and Reset Board State")
@@ -255,12 +432,15 @@ while RUNNING:
         time.sleep(0.4)
         
     if keyboard.is_pressed("s"):
-        for row in range(16):
-            for col in range(16):
-                cell = grid[row][col]
-                cell.state = "hidden"
-        scan_and_update()
-        print_board()
+        if grid is not None:
+            for row in range(GRID_ROWS):
+                for col in range(GRID_COLS):
+                    cell = grid[row][col]
+                    cell.state = "hidden"
+            scan_and_update()
+            print_board()
+        else:
+            print("[ERROR] Map the board first before scanning!")
         time.sleep(0.4)
     
     if keyboard.is_pressed("h"):
@@ -269,11 +449,14 @@ while RUNNING:
         while main_loop_activated:
             has_moves = main_loop()
 
-            if not has_moves:
-                print("Stopping Solving")
-                main_loop_activated = False
+            # if not has_moves:
+            #     print("No safe moves structural pattern matches found. Firing tactical evaluation guesser...")
+            #     emergency_guess()
+            #     scan_and_update()
+            #     if not rule_book():
+            #         pass
 
-            if keyboard.is_pressed("h"):
+            if keyboard.is_pressed("h"): 
                 print("Stopping Solving") 
                 main_loop_activated = False
                 time.sleep(0.5)
